@@ -167,11 +167,14 @@ const ToneInstanceGenerator = ({
         setIsPlaying(true);
 
         let currentTime = 0.1;
+        const startIndex = currentIndex ?? 0;
+        const remainingPositions = g_positions.slice(startIndex);
 
-        g_positions.forEach((pos, index: number) => {
+        remainingPositions.forEach((pos, i: number) => {
+            const actualIndex = startIndex + i;
             const randomTiming = '8n' // durations[Math.floor(Math.random() * durations.length)];
             Tone.getTransport().schedule((time) => {
-                Tone.getDraw().schedule(() => setCurrentIndex(index), time);
+                Tone.getDraw().schedule(() => setCurrentIndex(actualIndex), time);
                 // Play Reference Base
                 synth.triggerAttackRelease(dna_note_map[pos.ref] || "C4", randomTiming, time);
                 // Play Alt Base on a different synth if it exists
@@ -202,7 +205,7 @@ const ToneInstanceGenerator = ({
     const stopPlayback = () => {
         Tone.getTransport().stop();
         Tone.getTransport().cancel();
-        setCurrentIndex(null);
+        // setCurrentIndex(null);
         setIsPlaying(false);
     };
 
@@ -240,10 +243,27 @@ const ToneInstanceGenerator = ({
                     </div>
                 )}
             </div>
-            <div className="d-flex gap-2">
+            <div className="d-flex flex-wrap gap-2 align-items-center">
                 <button className={`btn btn-sm ${isInitialized ? 'btn-primary' : 'btn-outline-primary'}`} onClick={handleInit}>
                     Initialize Audio
                 </button>
+                {g_positions && (
+                    <div className="d-flex align-items-center gap-2 bg-white border rounded px-2 py-1">
+                        <label className="small text-muted mb-0">Scroll Index:</label>
+                        <input 
+                            type="range" 
+                            className="form-range" 
+                            style={{ width: '150px' }}
+                            min="0" 
+                            max={g_positions.length - 1} 
+                            value={currentIndex ?? 0} 
+                            onChange={(e) => {
+                                stopPlayback();
+                                setCurrentIndex(parseInt(e.target.value));
+                            }}
+                        />
+                    </div>
+                )}
                 <button className="btn btn-outline-primary btn-sm" onClick={playNotes} disabled={isPlaying}>
                     Play Sequence
                 </button>
