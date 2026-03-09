@@ -8,6 +8,6 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <GeneInfoRetrieval />
     <SynthInput />
-    <NavBarBottom />
+    {/* <NavBarBottom /> */}
   </StrictMode>,
 )

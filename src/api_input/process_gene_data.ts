@@ -13,7 +13,7 @@ export const process_gene_data = (gene_data: Awaited<ReturnType<typeof getGeneDa
         const gloc = index + start
         const voi = gene_data.variantSample.filter(variant => variant.pos === gloc)
         const ref = base
-        const alts = voi.map((variant: { alt: any }) => {return variant.alt})
+        const alts = voi.map((variant) => {return variant.alt})
         return {gloc, ref, alts}
     })
     return seq_data

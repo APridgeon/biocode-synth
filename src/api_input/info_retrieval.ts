@@ -70,7 +70,7 @@ interface GeneMetadata {
 
     if (!gnomadRes.ok) throw new Error(`gnomAD request failed: ${gnomadRes.statusText}`);
     const gnomadData = await gnomadRes.json();
-    const variants = gnomadData.data.gene.variants;
+    const variants: variant[] = gnomadData.data.gene.variants;
     console.log(`Found ${variants.length} gnomAD variants.`);
     
     // Sample Output
@@ -89,3 +89,13 @@ interface GeneMetadata {
 export default getGeneData;
 
 
+type variant = {
+  variant_id: string;
+  pos: number;
+  ref: string;
+  alt: string;
+  genome: {
+    ac: number;
+    an: number;
+  };
+}

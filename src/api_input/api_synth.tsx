@@ -2,6 +2,8 @@ import * as Tone from 'tone';
 import type { process_gene_data } from './process_gene_data';
 import { useState } from 'react';
 import getGeneData from './info_retrieval';
+import SynthSettingsBar from './synth_settings';
+import FastaWindow from './sequence_window';
 
 
 const dna_note_map: Record<string, string> = {
@@ -23,6 +25,8 @@ class ToneSynth {
     private type: string = "Synth";
     private activeSynthKey: string = "default";
     private options: any = {};
+    private delay: Tone.FeedbackDelay | null = null;
+    private limiter: Tone.Limiter | null = null;
 
     /**
      * Initializes the Tone.js context and creates the synth instance if it doesn't exist.
@@ -31,6 +35,13 @@ class ToneSynth {
         if (Tone.getContext().state !== 'running') {
             await Tone.start();
         }
+        if (!this.limiter) {
+            this.limiter = new Tone.Limiter(-6).toDestination();
+        }
+        if (!this.delay) {
+            this.delay = new Tone.FeedbackDelay("8n", 0.5).connect(this.limiter);
+        }
+
         if (!this.synths.has(this.activeSynthKey)) {
             this.createSynth(this.activeSynthKey);
         }
@@ -46,17 +57,18 @@ class ToneSynth {
 
         let newSynth;
         // Mapping string types to Tone.js classes
+        const dest = this.delay ? this.delay : (this.limiter ? this.limiter : Tone.getDestination());
         switch (this.type) {
-            case "MonoSynth": newSynth = new Tone.MonoSynth(this.options).toDestination(); break;
-            case "FMSynth": newSynth = new Tone.FMSynth(this.options).toDestination(); break;
-            case "AMSynth": newSynth = new Tone.AMSynth(this.options).toDestination(); break;
-            case "DuoSynth": newSynth = new Tone.DuoSynth(this.options).toDestination(); break;
-            case "MembraneSynth": newSynth = new Tone.MembraneSynth(this.options).toDestination(); break;
-            case "PluckSynth": newSynth = new Tone.PluckSynth(this.options).toDestination(); break;
-            case "MetalSynth": newSynth = new Tone.MetalSynth(this.options).toDestination(); break;
-            case "NoiseSynth": newSynth = new Tone.NoiseSynth(this.options).toDestination(); break;
-            case "PolySynth": newSynth = new Tone.PolySynth(Tone.Synth, this.options).toDestination(); break;
-            default: newSynth = new Tone.Synth(this.options).toDestination(); break;
+            case "MonoSynth": newSynth = new Tone.MonoSynth(this.options).connect(dest); break;
+            case "FMSynth": newSynth = new Tone.FMSynth(this.options).connect(dest); break;
+            case "AMSynth": newSynth = new Tone.AMSynth(this.options).connect(dest); break;
+            case "DuoSynth": newSynth = new Tone.DuoSynth(this.options).connect(dest); break;
+            case "MembraneSynth": newSynth = new Tone.MembraneSynth(this.options).connect(dest); break;
+            case "PluckSynth": newSynth = new Tone.PluckSynth(this.options).connect(dest); break;
+            case "MetalSynth": newSynth = new Tone.MetalSynth(this.options).connect(dest); break;
+            case "NoiseSynth": newSynth = new Tone.NoiseSynth(this.options).connect(dest); break;
+            case "PolySynth": newSynth = new Tone.PolySynth(Tone.Synth, this.options).connect(dest); break;
+            default: newSynth = new Tone.Synth(this.options).connect(dest); break;
         }
         this.synths.set(key, newSynth);
     }
@@ -64,10 +76,10 @@ class ToneSynth {
     /**
      * Sets the synth type and options, then re-initializes the instance.
      */
-    setConfiguration(newType?: string, options?: any) {
+    setConfiguration(newType?: string, options?: any, key: string = "default") {
         if (newType) this.type = newType;
         if (options) {
-            this.options = { ...this.options, ...options };
+            this.options = { ...options };
             if (this.synths.has(this.activeSynthKey)) {
                 this.synths.get(this.activeSynthKey).set(options);
             }
@@ -75,12 +87,21 @@ class ToneSynth {
         this.createSynth(this.activeSynthKey);
     }
 
+    setDelay(wet: number, delayTime?: string) {
+        if (this.delay) {
+            this.delay.wet.value = wet;
+            if (delayTime) this.delay.delayTime.value = delayTime;
+        }
+    }
+
+
     /**
      * Triggers a single note.
      */
-    triggerAttackRelease(note: string, duration: string, time?: number) {
-        if (!this.synths.has(this.activeSynthKey)) this.init();
-        this.synths.get(this.activeSynthKey)?.triggerAttackRelease(note, duration, time);
+    triggerAttackRelease(note: string, duration: string, time?: number, key: string = "default") {
+        if (!this.synths.has(key)) this.createSynth(key);
+        const targetSynth = this.synths.get(key);
+        targetSynth?.triggerAttackRelease(note, duration, time);
     }
 
     /**
@@ -108,53 +129,29 @@ class ToneSynth {
 
 export const synth = new ToneSynth();
 
-/**
- * React Component to initialize and test the ToneJS instance.
- */
+
 const ToneInstanceGenerator = ({ 
     g_positions, 
     gene_data 
 }: { g_positions: ReturnType<typeof process_gene_data>, gene_data: Awaited<ReturnType<typeof getGeneData>> | null }) => {
     const [isInitialized, setIsInitialized] = useState(false);
     const [currentIndex, setCurrentIndex] = useState<number | null>(null);
+    const [isPlaying, setIsPlaying] = useState(false);
     const [synthSettings, setSynthSettings] = useState({
-        oscillator: { type: 'triangle' },
-        envelope: { attack: 0.005, decay: 0.1, sustain: 0.3, release: 1 }
+        oscillator: { type: 'sine' },
+        envelope: { attack: 0.005, decay: 0.1, sustain: 0.3, release: 1 },
+        delayWet: 0.15,
+        delayTime: '8n'
     });
-
-    const renderFastaWindow = () => {
-        if (!gene_data?.fasta) return null;
-        const sequence = gene_data.fasta;
-        const windowSize = 50;
-        const halfWindow = Math.floor(windowSize / 2);
-        
-        const center = currentIndex ?? 0;
-        let start = Math.max(0, center - halfWindow);
-        let end = Math.min(sequence.length, start + windowSize);
-        
-        // Adjust start if we are near the end of the sequence
-        if (end - start < windowSize) {
-            start = Math.max(0, end - windowSize);
-        }
-
-        const prefix = sequence.substring(start, center);
-        const highlight = currentIndex !== null ? sequence[center] : "";
-        const suffix = sequence.substring(center + (highlight ? 1 : 0), end);
-
-        return (
-            <div className="mt-3 p-2 bg-dark text-white font-monospace" style={{ wordBreak: 'break-all', fontSize: '1rem', borderRadius: '4px' }}>
-                <span className="text-muted">...</span>
-                {prefix}
-                <span className="bg-warning text-dark fw-bold">{highlight}</span>
-                {suffix}
-                <span className="text-muted">...</span>
-            </div>
-        );
-    };
 
     const handleInit = async () => {
         await synth.init();
-        synth.setConfiguration("Synth", synthSettings);
+        synth.setConfiguration("FMSynth", synthSettings);
+        // Initialize multiple alt synths to handle potential multiple concurrent variants
+        for (let i = 0; i < 5; i++) {
+            synth.setConfiguration("Synth", { ...synthSettings, volume: -12 }, `altSynth_${i}`);
+        }
+        synth.setDelay(synthSettings.delayWet, synthSettings.delayTime);
         setIsInitialized(true);
         console.log("Tone.js Initialized with positions:", g_positions);
     };
@@ -167,17 +164,29 @@ const ToneInstanceGenerator = ({
             Tone.getTransport().stop();
             Tone.getTransport().cancel();
         }
+        setIsPlaying(true);
 
         let currentTime = 0.1;
 
-        g_positions.forEach((pos: any, index: number) => {
+        g_positions.forEach((pos, index: number) => {
             const randomTiming = '8n' // durations[Math.floor(Math.random() * durations.length)];
             Tone.getTransport().schedule((time) => {
-                Tone.Draw.schedule(() => setCurrentIndex(index), time);
+                Tone.getDraw().schedule(() => setCurrentIndex(index), time);
+                // Play Reference Base
                 synth.triggerAttackRelease(dna_note_map[pos.ref] || "C4", randomTiming, time);
+                // Play Alt Base on a different synth if it exists
+                if (Array.isArray(pos.alts)) {
+                    pos.alts.forEach((alt: string, altIdx: number) => {
+                        synth.triggerAttackRelease(dna_note_map[alt] || "E3", randomTiming, time, `altSynth_${altIdx}`);
+                    });
+                }
             }, `+${currentTime}`);
             currentTime += Tone.Time(randomTiming).toSeconds();
         });
+
+        Tone.getTransport().schedule(() => {
+            Tone.getDraw().schedule(() => setIsPlaying(false), Tone.now());
+        }, `+${currentTime}`);
 
         Tone.getTransport().start();
     };
@@ -194,6 +203,7 @@ const ToneInstanceGenerator = ({
         Tone.getTransport().stop();
         Tone.getTransport().cancel();
         setCurrentIndex(null);
+        setIsPlaying(false);
     };
 
     const updateEnvelope = (field: string, value: number) => {
@@ -207,6 +217,17 @@ const ToneInstanceGenerator = ({
         setSynthSettings(newSettings);
         synth.setConfiguration(undefined, newSettings);
     };
+
+    const updateDelay = (value: number) => {
+        setSynthSettings(prev => ({ ...prev, delayWet: value }));
+        synth.setDelay(value);
+    };
+
+    const updateDelayTime = (value: string) => {
+        setSynthSettings(prev => ({ ...prev, delayTime: value }));
+        synth.setDelay(synthSettings.delayWet, value);
+    };
+
 
     return (
         <div className="p-3 border rounded shadow-sm bg-light">
@@ -223,7 +244,7 @@ const ToneInstanceGenerator = ({
                 <button className={`btn btn-sm ${isInitialized ? 'btn-primary' : 'btn-outline-primary'}`} onClick={handleInit}>
                     Initialize Audio
                 </button>
-                <button className="btn btn-outline-primary btn-sm" onClick={playNotes}>
+                <button className="btn btn-outline-primary btn-sm" onClick={playNotes} disabled={isPlaying}>
                     Play Sequence
                 </button>
                 <button className="btn btn-outline-warning btn-sm" onClick={togglePause}>
@@ -234,34 +255,15 @@ const ToneInstanceGenerator = ({
                 </button>
             </div>
 
-            <div className="row mt-3 g-2">
-                <div className="col-md-12">
-                    <label className="form-label small">Oscillator Type</label>
-                    <select 
-                        className="form-select form-select-sm" 
-                        value={synthSettings.oscillator.type} 
-                        onChange={(e) => updateOscillator(e.target.value)}
-                    >
-                        {['triangle', 'sine', 'square', 'sawtooth'].map(type => (
-                            <option key={type} value={type}>{type.charAt(0).toUpperCase() + type.slice(1)}</option>
-                        ))}
-                    </select>
-                </div>
-                <div className="col-md-6">
-                    <label className="form-label small">Attack: {synthSettings.envelope.attack}</label>
-                    <input type="range" className="form-range" min="0.001" max="2" step="0.1" value={synthSettings.envelope.attack} onChange={(e) => updateEnvelope('attack', Number(e.target.value))} />
-                </div>
-                <div className="col-md-6">
-                    <label className="form-label small">Decay: {synthSettings.envelope.decay}</label>
-                    <input type="range" className="form-range" min="0.1" max="2" step="0.1" value={synthSettings.envelope.decay} onChange={(e) => updateEnvelope('decay', Number(e.target.value))} />
-                </div>
-                <div className="col-md-6">
-                    <label className="form-label small">Release: {synthSettings.envelope.release}</label>
-                    <input type="range" className="form-range" min="0.1" max="5" step="0.1" value={synthSettings.envelope.release} onChange={(e) => updateEnvelope('release', Number(e.target.value))} />
-                </div>
-            </div>
+            <SynthSettingsBar 
+                synthSettings={synthSettings}
+                updateOscillator={updateOscillator}
+                updateEnvelope={updateEnvelope}
+                updateDelayTime={updateDelayTime}
+                updateDelay={updateDelay}
+            />
 
-            {renderFastaWindow()}
+            <FastaWindow g_positions={g_positions} currentIndex={currentIndex} />
         </div>
     );
 }

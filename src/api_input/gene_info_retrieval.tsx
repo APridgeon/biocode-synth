@@ -23,7 +23,7 @@ const GeneInfoRetrieval = () => {
     const handleSearch = async () => {
         setIsLoading(true);
         console.log("Searching for gene:", geneSymbol);
-        const gene_data = await load_gene_data(geneSymbol);
+        const gene_data = await query_api(geneSymbol);
         if(!gene_data) throw Error("Gene not found")
         setGeneData(gene_data);
         setActiveGene(gene_data.symbol);
