@@ -31,7 +31,7 @@ const GeneDiagram = ({data, currentIndex}: {data: Awaited<ReturnType<typeof getG
     }, {});
 
     const rowHeight = 60;
-    const chartHeight = Math.max(100, (transcripts.length * rowHeight) + 40);
+    const chartHeight = Math.max(150, (transcripts.length * rowHeight) + 80);
 
     return (
         <div className="mt-4 p-4 border rounded bg-dark shadow-lg overflow-auto" style={{ maxHeight: '500px' }}>
@@ -40,20 +40,20 @@ const GeneDiagram = ({data, currentIndex}: {data: Awaited<ReturnType<typeof getG
                 <div className="d-flex align-items-center gap-2">
                     {currentIndex !== null && (
                         <div className="btn-group btn-group-sm me-2">
-                            <button className="btn btn-outline-light" onClick={() => setZoomWindow(prev => prev ? prev * 2 : 1000)} title="Zoom Out">
-                                <i className="bi bi-zoom-out">−</i>
-                            </button>
-                            <button className="btn btn-outline-light" onClick={() => setZoomWindow(prev => prev ? Math.max(50, prev / 2) : 500)} title="Zoom In">
-                                <i className="bi bi-zoom-in">+</i>
-                            </button>
                             {isZoomed && (
                                 <button className="btn btn-outline-danger" onClick={() => setZoomWindow(null)} title="Reset Zoom">Reset</button>
                             )}
+                            <button className="btn btn-outline-light" onClick={() => setZoomWindow(prev => prev ? prev * 2 : 1000)} title="Zoom Out">
+                                <i className="bi bi-zoom-out">−</i>
+                            </button>
+                            <button className="btn btn-outline-light" onClick={() => setZoomWindow(prev => prev ? Math.max(50, prev / 2) : 5000)} title="Zoom In">
+                                <i className="bi bi-zoom-in">+</i>
+                            </button>
                         </div>
                     )}
                 </div>
             </div>
-            <svg width="100%" height={chartHeight} viewBox={`0 0 ${width} ${chartHeight}`} preserveAspectRatio="xMidYMid meet">
+            <svg width="100%" height={chartHeight} viewBox={`0 0 ${width} ${chartHeight}`} preserveAspectRatio="xMidYMin meet">
                 {transcripts.map((transcript, idx) => {
                     const yBase = 30 + (idx * rowHeight);
                     const children = featuresByParent[transcript.id] || [];
