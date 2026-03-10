@@ -9,6 +9,13 @@ interface GeneMetadata {
   end: number;
   strand: number;
 }
+
+interface GeneFeature {
+  feature_type: string;
+  start: number;
+  end: number;
+}
+
 /**
  * Main function to orchestrate the gene data retrieval
  */async function getGeneData(symbol: string) {
@@ -36,6 +43,17 @@ interface GeneMetadata {
     console.log(`FASTA sequence retrieved (Length: ${fastaData.length} chars)`);
     const fasta_seq = fastaData.split('\n').slice(1, undefined).join('\n').replaceAll('\n', '')
     console.log(fasta_seq.length)
+
+    // 2.5 Get Gene Features (Exons, UTRs, etc.) from Ensembl
+    const overlapRes = await fetch(`${ENSEMBL_REST}/overlap/region/homo_sapiens/${gene.seq_region_name}:${gene.start}-${gene.end}?feature=exon;feature=transcript;feature=cds;feature=gene`, {
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (!overlapRes.ok) throw new Error(`Ensembl overlap failed: ${overlapRes.statusText}`);
+    const features: GeneFeature[] = await overlapRes.json();
+    
+    console.log(`Found ${features.length} gene features.`);
+    const geneFeatures = features.map(f => ({ type: f.feature_type, start: f.start, end: f.end }));
+
 
     // 3. Get gnomAD Variants via GraphQL
     // Querying the gene object to get associated variants
@@ -78,7 +96,8 @@ interface GeneMetadata {
       symbol: gene.display_name,
       coordinates: `${gene.seq_region_name}:${gene.start}-${gene.end}`,
       fasta: fasta_seq,
-      variantSample: variants
+      variantSample: variants,
+      features: geneFeatures
     };
 
   } catch (error: any) {

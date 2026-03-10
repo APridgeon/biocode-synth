@@ -4,6 +4,7 @@ import { useState } from 'react';
 import getGeneData from './info_retrieval';
 import SynthSettingsBar from './synth_settings';
 import FastaWindow from './sequence_window';
+import GeneDiagram from './gene_diagram';
 
 
 const dna_note_map: Record<string, string> = {
@@ -284,6 +285,8 @@ const ToneInstanceGenerator = ({
             />
 
             <FastaWindow g_positions={g_positions} currentIndex={currentIndex} />
+
+            <GeneDiagram data={gene_data} currentIndex={currentIndex} />
         </div>
     );
 }

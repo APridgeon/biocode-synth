@@ -2,6 +2,7 @@ import { useState } from "react";
 import getGeneData from "./info_retrieval";
 import { process_gene_data } from "./process_gene_data";
 import ToneInstanceGenerator from "./api_synth";
+import GeneDiagram from "./gene_diagram";
 
 const GeneInfoRetrieval = () => {
     const [geneSymbol, setGeneSymbol] = useState("");
@@ -25,6 +26,7 @@ const GeneInfoRetrieval = () => {
         console.log("Searching for gene:", geneSymbol);
         const gene_data = await query_api(geneSymbol);
         if(!gene_data) throw Error("Gene not found")
+        console.log("Gene data:", gene_data);
         setGeneData(gene_data);
         setActiveGene(gene_data.symbol);
 
