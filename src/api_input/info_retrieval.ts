@@ -12,8 +12,10 @@ interface GeneMetadata {
 
 interface GeneFeature {
   feature_type: string;
+  id?: string;
   start: number;
   end: number;
+  Parent?: string;
 }
 
 /**
@@ -52,7 +54,7 @@ interface GeneFeature {
     const features: GeneFeature[] = await overlapRes.json();
     
     console.log(`Found ${features.length} gene features.`);
-    const geneFeatures = features.map(f => ({ type: f.feature_type, start: f.start, end: f.end }));
+    const geneFeatures = features.map(f => ({ type: f.feature_type, id: f.id, start: f.start, end: f.end, parent: f.Parent }));
 
 
     // 3. Get gnomAD Variants via GraphQL

@@ -43,18 +43,18 @@ const FastaWindow = ({ g_positions, currentIndex }: { g_positions: any[] | null,
     };
 
     return (
-        <div className="mt-3 p-3 bg-dark text-white font-monospace shadow-lg" style={{ borderRadius: '8px', border: '1px solid #444' }}>
+        <div className="mt-3 p-3 bg-dark text-white font-monospace shadow-lg overflow-hidden" style={{ borderRadius: '8px', border: '1px solid #444' }}>
             <div className="d-flex flex-column gap-1">
                 {/* Alts Row */}
                 <div className="d-flex align-items-center">
                     <span className="text-info small fw-bold me-2" style={{ minWidth: '45px' }}>ALT</span>
-                    <div className="d-flex overflow-hidden">
+                    <div className="d-flex">
                         {windowSlice.map((p: any, i: number) => {
                             const isCurrent = (start + i) === currentIndex;
                             let alts = Array.isArray(p.alts) ? [...p.alts] : (p.alts ? [p.alts] : []);
                             alts.sort((a, b) => b.length - a.length);
                             return (
-                                <div key={i} className="d-flex flex-column align-items-center" style={{ width: '2.5ch' }}>
+                                <div key={i} className="d-flex flex-column align-items-center" style={{ width: '2ch' }}>
                                     <div className="d-flex flex-column align-items-center" style={{ minHeight: '3rem', justifyContent: 'end' }}>
                                         {alts.length > 0 ? alts.map((alt: string, ai: number) => (
                                             <span key={ai} className={`${isCurrent ? "text-warning fw-bold" : "text-info"}`} style={{ fontSize: '0.7rem', lineHeight: '1' }}>{alt}</span>
@@ -69,11 +69,11 @@ const FastaWindow = ({ g_positions, currentIndex }: { g_positions: any[] | null,
                 {/* Ref Row */}
                 <div className="d-flex align-items-center">
                     <span className="text-secondary small fw-bold me-2" style={{ minWidth: '45px' }}>REF</span>
-                    <div className="d-flex overflow-hidden">
+                    <div className="d-flex">
                         {windowSlice.map((p: any, i: number) => {
                             const isCurrent = (start + i) === currentIndex;
                             return (
-                                <div key={i} className="d-flex flex-column align-items-center" style={{ width: '2.5ch' }}>
+                                <div key={i} className="d-flex flex-column align-items-center" style={{ width: '2ch' }}>
                                     <span 
                                         className={`d-flex align-items-center justify-content-center ${isCurrent ? "bg-warning text-dark fw-bold rounded-circle" : ""}`}
                                         style={{ width: '2ch', height: '2ch', color: isCurrent ? undefined : getBaseColor(p.ref) }}
