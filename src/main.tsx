@@ -7,7 +7,6 @@ import GeneInfoRetrieval from './api_input/gene_info_retrieval.tsx'
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <GeneInfoRetrieval />
-    <SynthInput />
     {/* <NavBarBottom /> */}
   </StrictMode>,
 )

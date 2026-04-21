@@ -9,9 +9,16 @@ import GeneDiagram from './gene_diagram';
 
 const dna_note_map: Record<string, string> = {
     'A': 'C4',
-    'T': 'E4',
+    'T': 'Eb4',
     'C': 'G4',
-    'G': 'B4'
+    'G': 'Bb4'
+};
+
+const alt_note_map: Record<string, string> = {
+    'A': 'C3',
+    'T': 'Eb3',
+    'C': 'G3',
+    'G': 'Bb3'
 };
 
 const durations = ['1n', '2n', '4n', '8n', '16n', '32n'];
@@ -28,6 +35,7 @@ class ToneSynth {
     private options: any = {};
     private delay: Tone.FeedbackDelay | null = null;
     private limiter: Tone.Limiter | null = null;
+    private reverb: Tone.Reverb | null = null;
 
     /**
      * Initializes the Tone.js context and creates the synth instance if it doesn't exist.
@@ -39,8 +47,12 @@ class ToneSynth {
         if (!this.limiter) {
             this.limiter = new Tone.Limiter(-6).toDestination();
         }
+        if (!this.reverb) {
+            this.reverb = new Tone.Reverb({ decay: 2.5, wet: 0.3 }).connect(this.limiter);
+            await this.reverb.generate();
+        }
         if (!this.delay) {
-            this.delay = new Tone.FeedbackDelay("8n", 0.5).connect(this.limiter);
+            this.delay = new Tone.FeedbackDelay("8n", 0.4).connect(this.reverb);
         }
 
         if (!this.synths.has(this.activeSynthKey)) {
@@ -139,10 +151,11 @@ const ToneInstanceGenerator = ({
     const [currentIndex, setCurrentIndex] = useState<number | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [synthSettings, setSynthSettings] = useState({
-        oscillator: { type: 'sine' },
-        envelope: { attack: 0.005, decay: 0.1, sustain: 0.3, release: 1 },
+        oscillator: { type: 'triangle' },
+        envelope: { attack: 0.02, decay: 0.2, sustain: 0.2, release: 1.2 },
         delayWet: 0.15,
-        delayTime: '8n'
+        delayTime: '8n',
+        playbackSpeed: 1
     });
 
     const handleInit = async () => {
@@ -150,7 +163,7 @@ const ToneInstanceGenerator = ({
         synth.setConfiguration("FMSynth", synthSettings);
         // Initialize multiple alt synths to handle potential multiple concurrent variants
         for (let i = 0; i < 5; i++) {
-            synth.setConfiguration("Synth", { ...synthSettings, volume: -12 }, `altSynth_${i}`);
+            synth.setConfiguration("AMSynth", { ...synthSettings, volume: -15 }, `altSynth_${i}`);
         }
         synth.setDelay(synthSettings.delayWet, synthSettings.delayTime);
         setIsInitialized(true);
@@ -170,22 +183,33 @@ const ToneInstanceGenerator = ({
         let currentTime = 0.1;
         const startIndex = currentIndex ?? 0;
         const remainingPositions = g_positions.slice(startIndex);
+        const speedMultiplier = 1 / synthSettings.playbackSpeed;
 
         remainingPositions.forEach((pos, i: number) => {
             const actualIndex = startIndex + i;
-            const randomTiming = '8n' // durations[Math.floor(Math.random() * durations.length)];
+            const baseTiming = '8n';
+            const scaledDuration = Tone.Time(baseTiming).toSeconds() * speedMultiplier;
+            
             Tone.getTransport().schedule((time) => {
                 Tone.getDraw().schedule(() => setCurrentIndex(actualIndex), time);
                 // Play Reference Base
-                synth.triggerAttackRelease(dna_note_map[pos.ref] || "C4", randomTiming, time);
+                synth.triggerAttackRelease(dna_note_map[pos.ref] || "C4", `${scaledDuration}s`, time);
                 // Play Alt Base on a different synth if it exists
                 if (Array.isArray(pos.alts)) {
                     pos.alts.forEach((alt: string, altIdx: number) => {
-                        synth.triggerAttackRelease(dna_note_map[alt] || "E3", randomTiming, time, `altSynth_${altIdx}`);
+                        if (alt.length > 1) {
+                            const subDuration = scaledDuration / alt.length;
+                            alt.split('').forEach((char, charIdx) => {
+                                const noteTime = time + (charIdx * subDuration);
+                                synth.triggerAttackRelease(alt_note_map[char] || "E3", `${subDuration}s`, noteTime, `altSynth_${altIdx}`);
+                            });
+                        } else {
+                            synth.triggerAttackRelease(alt_note_map[alt] || "E3", `${scaledDuration}s`, time, `altSynth_${altIdx}`);
+                        }
                     });
                 }
             }, `+${currentTime}`);
-            currentTime += Tone.Time(randomTiming).toSeconds();
+            currentTime += scaledDuration;
         });
 
         Tone.getTransport().schedule(() => {
@@ -232,11 +256,15 @@ const ToneInstanceGenerator = ({
         synth.setDelay(synthSettings.delayWet, value);
     };
 
+    const updatePlaybackSpeed = (value: number) => {
+        setSynthSettings(prev => ({ ...prev, playbackSpeed: value }));
+    };
+
 
     return (
         <div className="p-3 border rounded shadow-sm bg-light">
             <div className="d-flex justify-content-between align-items-center mb-2">
-                <h5 className="m-0">Tone.js Controller</h5>
+                <h5 className="m-0">Synth Controller</h5>
                 {currentIndex !== null && g_positions && g_positions[currentIndex] && (
                     <div className="d-flex gap-2">
                         <span className="badge bg-info text-dark">Index: {currentIndex}</span>
@@ -265,6 +293,19 @@ const ToneInstanceGenerator = ({
                         />
                     </div>
                 )}
+                <div className="d-flex align-items-center gap-2 bg-white border rounded px-2 py-1">
+                    <label className="small text-muted mb-0">Speed: {synthSettings.playbackSpeed}x</label>
+                    <input 
+                        type="range" 
+                        className="form-range" 
+                        style={{ width: '100px' }}
+                        min="0.1" 
+                        max="4" 
+                        step="0.1"
+                        value={synthSettings.playbackSpeed} 
+                        onChange={(e) => updatePlaybackSpeed(parseFloat(e.target.value))}
+                    />
+                </div>
                 <button className="btn btn-outline-primary btn-sm" onClick={playNotes} disabled={isPlaying}>
                     Play Sequence
                 </button>
