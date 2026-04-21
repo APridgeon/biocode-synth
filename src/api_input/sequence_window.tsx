@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react';
+import type { ClinVarMap } from './clinvar_retrieval';
+import { SIG_CONFIG, } from './gene_info_card';
+import { topSignificance } from './clinvar_retrieval';
 
-const FastaWindow = ({ g_positions, currentIndex }: { g_positions: any[] | null, currentIndex: number | null }) => {
+const FastaWindow = ({ g_positions, currentIndex, clinvarMap }: {
+    g_positions: any[] | null;
+    currentIndex: number | null;
+    clinvarMap: ClinVarMap | null;
+}) => {
     const [windowSize, setWindowSize] = useState(50);
 
     useEffect(() => {
@@ -50,14 +57,28 @@ const FastaWindow = ({ g_positions, currentIndex }: { g_positions: any[] | null,
                     <span className="text-info small fw-bold me-2" style={{ minWidth: '45px' }}>ALT</span>
                     <div className="d-flex">
                         {windowSlice.map((p: any, i: number) => {
-                            const isCurrent = (start + i) === currentIndex;
+                            const absIdx = start + i;
+                            const isCurrent = absIdx === currentIndex;
                             let alts = Array.isArray(p.alts) ? [...p.alts] : (p.alts ? [p.alts] : []);
-                            alts.sort((a, b) => b.length - a.length);
+                            alts.sort((a: string, b: string) => b.length - a.length);
+                            const cvVariants = clinvarMap?.get(p.gloc) ?? [];
+                            const sig = cvVariants.length > 0 ? topSignificance(cvVariants) : null;
+                            const altColor = isCurrent
+                                ? '#ffc107'
+                                : sig
+                                    ? SIG_CONFIG[sig].color
+                                    : '#0dcaf0';
                             return (
                                 <div key={i} className="d-flex flex-column align-items-center" style={{ width: '2ch' }}>
                                     <div className="d-flex flex-column align-items-center" style={{ minHeight: '3rem', justifyContent: 'end' }}>
                                         {alts.length > 0 ? alts.map((alt: string, ai: number) => (
-                                            <span key={ai} className={`${isCurrent ? "text-warning fw-bold" : "text-info"}`} style={{ fontSize: '0.7rem', lineHeight: '1' }}>{alt}</span>
+                                            <span
+                                                key={ai}
+                                                style={{ fontSize: '0.7rem', lineHeight: '1', color: altColor, fontWeight: sig === 'pathogenic' || sig === 'likely_pathogenic' ? 'bold' : undefined }}
+                                                title={sig ? SIG_CONFIG[sig].label : undefined}
+                                            >
+                                                {alt}
+                                            </span>
                                         )) : <span className="text-muted" style={{ fontSize: '0.7rem' }}>·</span>}
                                     </div>
                                 </div>

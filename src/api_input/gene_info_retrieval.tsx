@@ -2,6 +2,8 @@ import { useState } from "react";
 import getGeneData from "./info_retrieval";
 import { process_gene_data } from "./process_gene_data";
 import ToneInstanceGenerator from "./api_synth";
+import GeneInfoCard from "./gene_info_card";
+import { getClinVarData, type ClinVarMap } from "./clinvar_retrieval";
 
 const EXAMPLE_GENES = ['BRCA2', 'TP53', 'CFTR', 'EGFR', 'HTT', 'APOE'];
 
@@ -12,18 +14,39 @@ const GeneInfoRetrieval = () => {
     const [error, setError] = useState<string | null>(null);
     const [g_positions, setGPositions] = useState<any>(null);
     const [geneData, setGeneData] = useState<any>(null);
+    const [clinvarMap, setClinvarMap] = useState<ClinVarMap | null>(null);
+    const [clinvarLoading, setClinvarLoading] = useState(false);
+    const [clinvarError, setClinvarError] = useState(false);
+
+    const fetchClinVar = async (coordinates: string) => {
+        setClinvarLoading(true);
+        setClinvarError(false);
+        try {
+            const cv = await getClinVarData(coordinates);
+            setClinvarMap(cv);
+        } catch (e) {
+            console.error('[ClinVar] fetch failed:', e);
+            setClinvarError(true);
+        } finally {
+            setClinvarLoading(false);
+        }
+    };
 
     const handleSearch = async (symbol?: string) => {
         const target = (symbol ?? geneSymbol).trim().toUpperCase();
         if (!target) return;
         setIsLoading(true);
         setError(null);
+        setClinvarMap(null);
+        setClinvarError(false);
         try {
             const gene_data = await getGeneData(target);
             if (!gene_data) throw new Error("Gene not found");
             setGeneData(gene_data);
             setActiveGene(gene_data.symbol);
             setGPositions(process_gene_data(gene_data));
+            // Fire ClinVar fetch after gene data is ready — doesn't block the UI
+            fetchClinVar(gene_data.coordinates);
         } catch {
             setError(`Could not find gene "${target}". Try a gene symbol like BRCA2 or TP53.`);
         } finally {
@@ -86,14 +109,15 @@ const GeneInfoRetrieval = () => {
             )}
 
             {activeGene && !isLoading && (
-                <div className="text-center mb-3">
-                    <span className="badge rounded-pill bg-success fs-6 px-3 py-2">
-                        Loaded: {activeGene}
-                    </span>
-                </div>
+                <GeneInfoCard
+                    symbol={activeGene}
+                    clinvarMap={clinvarMap}
+                    clinvarLoading={clinvarLoading}
+                    clinvarError={clinvarError}
+                />
             )}
 
-            <ToneInstanceGenerator g_positions={g_positions} gene_data={geneData} />
+            <ToneInstanceGenerator g_positions={g_positions} gene_data={geneData} clinvarMap={clinvarMap} />
         </div>
     );
 }

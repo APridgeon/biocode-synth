@@ -5,6 +5,9 @@ import getGeneData from './info_retrieval';
 import SynthSettingsBar from './synth_settings';
 import FastaWindow from './sequence_window';
 import GeneDiagram from './gene_diagram';
+import type { ClinVarMap, ClinicalSignificance } from './clinvar_retrieval';
+import { topSignificance } from './clinvar_retrieval';
+import { SIG_CONFIG } from './gene_info_card';
 
 
 type NoteMap = Record<string, string>;
@@ -172,12 +175,18 @@ export const synth = new ToneSynth();
 
 const ToneInstanceGenerator = ({
     g_positions,
-    gene_data
-}: { g_positions: ReturnType<typeof process_gene_data>, gene_data: Awaited<ReturnType<typeof getGeneData>> | null }) => {
+    gene_data,
+    clinvarMap,
+}: {
+    g_positions: ReturnType<typeof process_gene_data>;
+    gene_data: Awaited<ReturnType<typeof getGeneData>> | null;
+    clinvarMap: ClinVarMap | null;
+}) => {
     const [isInitialized, setIsInitialized] = useState(false);
     const [currentIndex, setCurrentIndex] = useState<number | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [activePreset, setActivePreset] = useState<string>('jazz');
+    const [currentSig, setCurrentSig] = useState<ClinicalSignificance | null>(null);
     const [synthSettings, setSynthSettings] = useState({
         oscillator: { type: 'triangle' },
         envelope: { attack: 0.02, decay: 0.2, sustain: 0.2, release: 1.2 },
@@ -192,6 +201,8 @@ const ToneInstanceGenerator = ({
         for (let i = 0; i < 5; i++) {
             synth.setConfiguration("AMSynth", { ...synthSettings, volume: -15 }, `altSynth_${i}`);
         }
+        // Dedicated synth for pathogenic/likely-pathogenic variants — louder, plucked timbre
+        synth.setConfiguration("PluckSynth", { volume: 0 }, 'pathogenicSynth');
         synth.setDelay(synthSettings.delayWet, synthSettings.delayTime);
         setIsInitialized(true);
     };
@@ -206,6 +217,7 @@ const ToneInstanceGenerator = ({
             Tone.getTransport().cancel();
         }
         setIsPlaying(true);
+        setCurrentSig(null);
 
         const preset = NOTE_MAP_PRESETS[activePreset];
         const dna_note_map = preset.ref;
@@ -221,16 +233,35 @@ const ToneInstanceGenerator = ({
             const baseTiming = '8n';
             const scaledDuration = Tone.Time(baseTiming).toSeconds() * speedMultiplier;
 
+            // Look up ClinVar significance for this genomic position
+            const cvVariants = clinvarMap?.get(pos.gloc) ?? [];
+            const sig: ClinicalSignificance | null = cvVariants.length > 0 ? topSignificance(cvVariants) : null;
+            const isPathogenic = sig === 'pathogenic' || sig === 'likely_pathogenic';
+
             Tone.getTransport().schedule((time) => {
-                Tone.getDraw().schedule(() => setCurrentIndex(actualIndex), time);
+                Tone.getDraw().schedule(() => {
+                    setCurrentIndex(actualIndex);
+                    setCurrentSig(sig);
+                }, time);
+
                 synth.triggerAttackRelease(dna_note_map[pos.ref] || "C4", `${scaledDuration}s`, time);
-                if (Array.isArray(pos.alts)) {
+
+                if (Array.isArray(pos.alts) && pos.alts.length > 0) {
+                    if (isPathogenic) {
+                        // Pathogenic: play a distinct accent note via PluckSynth — same octave as ref (prominent)
+                        const accentNote = dna_note_map[pos.alts[0]?.[0]] || dna_note_map[pos.ref] || "C4";
+                        synth.triggerAttackRelease(accentNote, `${scaledDuration}s`, time, 'pathogenicSynth');
+                    }
                     pos.alts.forEach((alt: string, altIdx: number) => {
                         if (alt.length > 1) {
                             const subDuration = scaledDuration / alt.length;
                             alt.split('').forEach((char, charIdx) => {
-                                const noteTime = time + (charIdx * subDuration);
-                                synth.triggerAttackRelease(alt_note_map[char] || "E3", `${subDuration}s`, noteTime, `altSynth_${altIdx}`);
+                                synth.triggerAttackRelease(
+                                    alt_note_map[char] || "E3",
+                                    `${subDuration}s`,
+                                    time + charIdx * subDuration,
+                                    `altSynth_${altIdx}`
+                                );
                             });
                         } else {
                             synth.triggerAttackRelease(alt_note_map[alt] || "E3", `${scaledDuration}s`, time, `altSynth_${altIdx}`);
@@ -242,7 +273,7 @@ const ToneInstanceGenerator = ({
         });
 
         Tone.getTransport().schedule(() => {
-            Tone.getDraw().schedule(() => setIsPlaying(false), Tone.now());
+            Tone.getDraw().schedule(() => { setIsPlaying(false); setCurrentSig(null); }, Tone.now());
         }, `+${currentTime}`);
 
         Tone.getTransport().start();
@@ -289,6 +320,41 @@ const ToneInstanceGenerator = ({
         setSynthSettings(prev => ({ ...prev, playbackSpeed: value }));
     };
 
+    const skipToNextPathogenic = () => {
+        if (!g_positions || !clinvarMap) return;
+        const searchFrom = (currentIndex ?? -1) + 1;
+        for (let i = searchFrom; i < g_positions.length; i++) {
+            const cvVariants = clinvarMap.get(g_positions[i].gloc) ?? [];
+            if (cvVariants.length > 0) {
+                const sig = topSignificance(cvVariants);
+                if (sig === 'pathogenic' || sig === 'likely_pathogenic') {
+                    stopPlayback();
+                    setCurrentIndex(i);
+                    return;
+                }
+            }
+        }
+        // Wrap around to first pathogenic variant
+        for (let i = 0; i < searchFrom; i++) {
+            const cvVariants = clinvarMap.get(g_positions[i].gloc) ?? [];
+            if (cvVariants.length > 0) {
+                const sig = topSignificance(cvVariants);
+                if (sig === 'pathogenic' || sig === 'likely_pathogenic') {
+                    stopPlayback();
+                    setCurrentIndex(i);
+                    return;
+                }
+            }
+        }
+    };
+
+    const hasPathogenicVariants = g_positions && clinvarMap &&
+        g_positions.some(p => {
+            const cv = clinvarMap.get(p.gloc) ?? [];
+            if (!cv.length) return false;
+            const s = topSignificance(cv);
+            return s === 'pathogenic' || s === 'likely_pathogenic';
+        });
 
     const preset = NOTE_MAP_PRESETS[activePreset];
 
@@ -314,6 +380,15 @@ const ToneInstanceGenerator = ({
                             <button className="btn btn-danger btn-lg" onClick={stopPlayback}>
                                 ⏹ Stop
                             </button>
+                            {hasPathogenicVariants && (
+                                <button
+                                    className="btn btn-lg btn-outline-danger"
+                                    onClick={skipToNextPathogenic}
+                                    title="Jump to next pathogenic or likely-pathogenic variant"
+                                >
+                                    ⏭ Skip to Pathogenic
+                                </button>
+                            )}
                         </div>
 
                         {/* Note style + speed */}
@@ -360,9 +435,25 @@ const ToneInstanceGenerator = ({
                             </small>
                         </div>
 
+                        {/* ClinVar live indicator */}
+                        <div
+                            className="text-center mt-2 py-2 rounded fw-bold"
+                            style={{
+                                backgroundColor: currentSig && currentSig !== 'other'
+                                    ? SIG_CONFIG[currentSig].color
+                                    : 'transparent',
+                                color: currentSig && currentSig !== 'other' ? '#fff' : 'transparent',
+                                transition: 'background-color 0.2s, color 0.2s',
+                                letterSpacing: '0.05em',
+                                border: '2px solid transparent',
+                            }}
+                        >
+                            {currentSig && currentSig !== 'other' ? SIG_CONFIG[currentSig].label : ' '}
+                        </div>
+
                         {/* Scroll position */}
                         {g_positions && (
-                            <div className="d-flex align-items-center gap-2 justify-content-center">
+                            <div className="d-flex align-items-center gap-2 justify-content-center mt-2">
                                 <label className="small text-muted mb-0">Start position:</label>
                                 <input
                                     type="range"
@@ -399,7 +490,7 @@ const ToneInstanceGenerator = ({
                 updateDelay={updateDelay}
             />
 
-            <FastaWindow g_positions={g_positions} currentIndex={currentIndex} />
+            <FastaWindow g_positions={g_positions} currentIndex={currentIndex} clinvarMap={clinvarMap} />
 
             <GeneDiagram data={gene_data} currentIndex={currentIndex} />
         </div>
