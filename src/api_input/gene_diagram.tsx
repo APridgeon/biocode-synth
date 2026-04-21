@@ -7,7 +7,6 @@ const GeneDiagram = ({data, currentIndex}: {data: Awaited<ReturnType<typeof getG
     if (!data || !data.features) return null;
     const [chr, pos] = data.coordinates.split(':');
     const [start, end] = pos.split('-').map(val => Number(val));
-    const range = end - start;
     const width = 1000;
     const padding = 40;
 
@@ -56,7 +55,7 @@ const GeneDiagram = ({data, currentIndex}: {data: Awaited<ReturnType<typeof getG
             <svg width="100%" height={chartHeight} viewBox={`0 0 ${width} ${chartHeight}`} preserveAspectRatio="xMidYMin meet">
                 {transcripts.map((transcript, idx) => {
                     const yBase = 30 + (idx * rowHeight);
-                    const children = featuresByParent[transcript.id] || [];
+                    const children = featuresByParent[transcript.id ?? ''] || [];
                     const exons = children.filter((f: any) => f.type === 'exon');
                     const cds = children.filter((f: any) => f.type === 'cds');
 

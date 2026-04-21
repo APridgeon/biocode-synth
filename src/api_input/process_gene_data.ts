@@ -5,8 +5,8 @@ export const process_gene_data = (gene_data: Awaited<ReturnType<typeof getGeneDa
 
     if (!gene_data) throw Error('No gene data found')
 
-    const [chr, pos_range] = gene_data.coordinates.split(':')
-    const [start, end] = pos_range.split('-').map(val => Number(val))
+    const [_chr, pos_range] = gene_data.coordinates.split(':')
+    const [start, _end] = pos_range.split('-').map(val => Number(val))
     const sequence = gene_data.fasta.split('')
 
     const seq_data = sequence.map((base, index) => {

@@ -7,21 +7,48 @@ import FastaWindow from './sequence_window';
 import GeneDiagram from './gene_diagram';
 
 
-const dna_note_map: Record<string, string> = {
-    'A': 'C4',
-    'T': 'Eb4',
-    'C': 'G4',
-    'G': 'Bb4'
+type NoteMap = Record<string, string>;
+
+interface NotePreset {
+    label: string;
+    description: string;
+    ref: NoteMap;
+    alt: NoteMap;
+}
+
+const NOTE_MAP_PRESETS: Record<string, NotePreset> = {
+    jazz: {
+        label: 'Jazz',
+        description: 'Dark, bluesy feel (minor 7th)',
+        ref: { A: 'C4', T: 'Eb4', C: 'G4', G: 'Bb4' },
+        alt: { A: 'C3', T: 'Eb3', C: 'G3', G: 'Bb3' },
+    },
+    classical: {
+        label: 'Classical',
+        description: 'Bright, uplifting (major 7th)',
+        ref: { A: 'C4', T: 'E4', C: 'G4', G: 'B4' },
+        alt: { A: 'C3', T: 'E3', C: 'G3', G: 'B3' },
+    },
+    pentatonic: {
+        label: 'Pentatonic',
+        description: 'Simple, ear-friendly scale',
+        ref: { A: 'C4', T: 'D4', C: 'E4', G: 'G4' },
+        alt: { A: 'A3', T: 'B3', C: 'C3', G: 'D3' },
+    },
+    dramatic: {
+        label: 'Dramatic',
+        description: 'Wide range, bold contrast',
+        ref: { A: 'C3', T: 'G4', C: 'E4', G: 'B4' },
+        alt: { A: 'C2', T: 'G3', C: 'E3', G: 'B3' },
+    },
+    tense: {
+        label: 'Tense',
+        description: 'Dissonant, mysterious',
+        ref: { A: 'C4', T: 'Db4', C: 'Eb4', G: 'F4' },
+        alt: { A: 'C3', T: 'Db3', C: 'Eb3', G: 'F3' },
+    },
 };
 
-const alt_note_map: Record<string, string> = {
-    'A': 'C3',
-    'T': 'Eb3',
-    'C': 'G3',
-    'G': 'Bb3'
-};
-
-const durations = ['1n', '2n', '4n', '8n', '16n', '32n'];
 
 
 /**
@@ -89,7 +116,7 @@ class ToneSynth {
     /**
      * Sets the synth type and options, then re-initializes the instance.
      */
-    setConfiguration(newType?: string, options?: any, key: string = "default") {
+    setConfiguration(newType?: string, options?: any, _key: string = "default") {
         if (newType) this.type = newType;
         if (options) {
             this.options = { ...options };
@@ -143,13 +170,14 @@ class ToneSynth {
 export const synth = new ToneSynth();
 
 
-const ToneInstanceGenerator = ({ 
-    g_positions, 
-    gene_data 
+const ToneInstanceGenerator = ({
+    g_positions,
+    gene_data
 }: { g_positions: ReturnType<typeof process_gene_data>, gene_data: Awaited<ReturnType<typeof getGeneData>> | null }) => {
     const [isInitialized, setIsInitialized] = useState(false);
     const [currentIndex, setCurrentIndex] = useState<number | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
+    const [activePreset, setActivePreset] = useState<string>('jazz');
     const [synthSettings, setSynthSettings] = useState({
         oscillator: { type: 'triangle' },
         envelope: { attack: 0.02, decay: 0.2, sustain: 0.2, release: 1.2 },
@@ -161,24 +189,27 @@ const ToneInstanceGenerator = ({
     const handleInit = async () => {
         await synth.init();
         synth.setConfiguration("FMSynth", synthSettings);
-        // Initialize multiple alt synths to handle potential multiple concurrent variants
         for (let i = 0; i < 5; i++) {
             synth.setConfiguration("AMSynth", { ...synthSettings, volume: -15 }, `altSynth_${i}`);
         }
         synth.setDelay(synthSettings.delayWet, synthSettings.delayTime);
         setIsInitialized(true);
-        console.log("Tone.js Initialized with positions:", g_positions);
     };
 
-    const playNotes = () => {
+    const playNotes = async () => {
         if (!g_positions) return;
-        console.log("Playing positions:", g_positions);
-        
+
+        if (!isInitialized) await handleInit();
+
         if (Tone.getTransport().state === "started") {
             Tone.getTransport().stop();
             Tone.getTransport().cancel();
         }
         setIsPlaying(true);
+
+        const preset = NOTE_MAP_PRESETS[activePreset];
+        const dna_note_map = preset.ref;
+        const alt_note_map = preset.alt;
 
         let currentTime = 0.1;
         const startIndex = currentIndex ?? 0;
@@ -189,12 +220,10 @@ const ToneInstanceGenerator = ({
             const actualIndex = startIndex + i;
             const baseTiming = '8n';
             const scaledDuration = Tone.Time(baseTiming).toSeconds() * speedMultiplier;
-            
+
             Tone.getTransport().schedule((time) => {
                 Tone.getDraw().schedule(() => setCurrentIndex(actualIndex), time);
-                // Play Reference Base
                 synth.triggerAttackRelease(dna_note_map[pos.ref] || "C4", `${scaledDuration}s`, time);
-                // Play Alt Base on a different synth if it exists
                 if (Array.isArray(pos.alts)) {
                     pos.alts.forEach((alt: string, altIdx: number) => {
                         if (alt.length > 1) {
@@ -261,63 +290,108 @@ const ToneInstanceGenerator = ({
     };
 
 
-    return (
-        <div className="p-3 border rounded shadow-sm bg-light">
-            <div className="d-flex justify-content-between align-items-center mb-2">
-                <h5 className="m-0">Synth Controller</h5>
-                {currentIndex !== null && g_positions && g_positions[currentIndex] && (
-                    <div className="d-flex gap-2">
-                        <span className="badge bg-info text-dark">Index: {currentIndex}</span>
-                        <span className="badge bg-secondary">Ref: {g_positions[currentIndex].ref} | Alt: {g_positions[currentIndex].alts}</span>
-                    </div>
-                )}
-            </div>
-            <div className="d-flex flex-wrap gap-2 align-items-center">
-                <button className={`btn btn-sm ${isInitialized ? 'btn-primary' : 'btn-outline-primary'}`} onClick={handleInit}>
-                    Initialize Audio
-                </button>
-                {g_positions && (
-                    <div className="d-flex align-items-center gap-2 bg-white border rounded px-2 py-1">
-                        <label className="small text-muted mb-0">Scroll Index:</label>
-                        <input 
-                            type="range" 
-                            className="form-range" 
-                            style={{ width: '150px' }}
-                            min="0" 
-                            max={g_positions.length - 1} 
-                            value={currentIndex ?? 0} 
-                            onChange={(e) => {
-                                stopPlayback();
-                                setCurrentIndex(parseInt(e.target.value));
-                            }}
-                        />
-                    </div>
-                )}
-                <div className="d-flex align-items-center gap-2 bg-white border rounded px-2 py-1">
-                    <label className="small text-muted mb-0">Speed: {synthSettings.playbackSpeed}x</label>
-                    <input 
-                        type="range" 
-                        className="form-range" 
-                        style={{ width: '100px' }}
-                        min="0.1" 
-                        max="4" 
-                        step="0.1"
-                        value={synthSettings.playbackSpeed} 
-                        onChange={(e) => updatePlaybackSpeed(parseFloat(e.target.value))}
-                    />
-                </div>
-                <button className="btn btn-outline-primary btn-sm" onClick={playNotes} disabled={isPlaying}>
-                    Play Sequence
-                </button>
-                <button className="btn btn-outline-warning btn-sm" onClick={togglePause}>
-                    Pause/Resume
-                </button>
-                <button className="btn btn-outline-danger btn-sm" onClick={stopPlayback}>
-                    Stop
-                </button>
-            </div>
+    const preset = NOTE_MAP_PRESETS[activePreset];
 
-            <SynthSettingsBar 
+    return (
+        <div>
+            {g_positions && (
+                <div className="card shadow-sm mb-3">
+                    <div className="card-body">
+                        {/* Primary controls */}
+                        <div className="d-flex flex-wrap gap-2 align-items-center justify-content-center mb-3">
+                            <button
+                                className="btn btn-success btn-lg px-5"
+                                onClick={playNotes}
+                                disabled={isPlaying}
+                            >
+                                {isPlaying ? (
+                                    <><span className="spinner-border spinner-border-sm me-2" />Playing…</>
+                                ) : '▶ Play'}
+                            </button>
+                            <button className="btn btn-warning btn-lg" onClick={togglePause}>
+                                ⏸ Pause
+                            </button>
+                            <button className="btn btn-danger btn-lg" onClick={stopPlayback}>
+                                ⏹ Stop
+                            </button>
+                        </div>
+
+                        {/* Note style + speed */}
+                        <div className="d-flex flex-wrap gap-3 align-items-center justify-content-center mb-2">
+                            <div className="d-flex align-items-center gap-2">
+                                <label className="small fw-semibold mb-0">Sound style:</label>
+                                <div className="btn-group btn-group-sm">
+                                    {Object.entries(NOTE_MAP_PRESETS).map(([key, p]) => (
+                                        <button
+                                            key={key}
+                                            className={`btn ${activePreset === key ? 'btn-primary' : 'btn-outline-primary'}`}
+                                            onClick={() => setActivePreset(key)}
+                                            title={p.description}
+                                        >
+                                            {p.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="d-flex align-items-center gap-2">
+                                <label className="small fw-semibold mb-0">Speed: {synthSettings.playbackSpeed}x</label>
+                                <input
+                                    type="range"
+                                    className="form-range"
+                                    style={{ width: '100px' }}
+                                    min="0.1" max="4" step="0.1"
+                                    value={synthSettings.playbackSpeed}
+                                    onChange={(e) => updatePlaybackSpeed(parseFloat(e.target.value))}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Note map legend */}
+                        <div className="text-center mb-2">
+                            <small className="text-muted">
+                                <span className="fw-semibold">{preset.label}</span> — {preset.description} &nbsp;|&nbsp;
+                                {Object.entries(preset.ref).map(([base, note]) => (
+                                    <span key={base} className="me-2">
+                                        <span className="badge bg-secondary">{base}</span> {note}
+                                    </span>
+                                ))}
+                                <span className="ms-1 text-muted">(variants an octave lower)</span>
+                            </small>
+                        </div>
+
+                        {/* Scroll position */}
+                        {g_positions && (
+                            <div className="d-flex align-items-center gap-2 justify-content-center">
+                                <label className="small text-muted mb-0">Start position:</label>
+                                <input
+                                    type="range"
+                                    className="form-range"
+                                    style={{ width: '200px' }}
+                                    min="0"
+                                    max={g_positions.length - 1}
+                                    value={currentIndex ?? 0}
+                                    onChange={(e) => {
+                                        stopPlayback();
+                                        setCurrentIndex(parseInt(e.target.value));
+                                    }}
+                                />
+                                <span className="small text-muted">
+                                    {currentIndex ?? 0} / {g_positions.length - 1}
+                                </span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {!g_positions && (
+                <div className="text-center text-muted py-5">
+                    <p className="fs-5">Search for a gene above to get started.</p>
+                </div>
+            )}
+
+            <SynthSettingsBar
                 synthSettings={synthSettings}
                 updateOscillator={updateOscillator}
                 updateEnvelope={updateEnvelope}
